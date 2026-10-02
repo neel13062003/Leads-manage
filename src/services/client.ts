@@ -14,6 +14,7 @@ export async function fetchLeads(url: string, source: Source): Promise<Lead[]> {
 }
 
 function normalize(r: Record<string, unknown>, source: Source): Lead {
+  const fromPayload = r.source === "facebook" || r.source === "instagram" ? r.source : source;
   return {
     ...r,
     id: String(r.id ?? r.lead_id ?? ""),
@@ -22,6 +23,6 @@ function normalize(r: Record<string, unknown>, source: Source): Lead {
     phone: (r.phone ?? r.phone_number) as string | undefined,
     formName: (r.formName ?? r.form_name) as string | undefined,
     createdAt: String(r.createdAt ?? r.created_time ?? new Date().toISOString()),
-    source,
+    source: fromPayload,
   };
 }

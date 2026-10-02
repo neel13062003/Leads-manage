@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev-all.mjs",
+    "dev:web": "vite",
+    "server": "node server/webhook.cjs",
+    "start": "node server/webhook.cjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

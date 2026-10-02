@@ -9,6 +9,9 @@ dist
 .env.*
 !.env.example
 
+# webhook lead store
+server/data/
+
 # logs
 *.log
 npm-debug.log*

@@ -1,34 +1,17 @@
-import { FACEBOOK_API, getFacebookLeads } from "./facebook";
-import { INSTAGRAM_API, getInstagramLeads } from "./instagram";
-import { delay, mockLeads } from "./mock";
-import type { ImportResult, Lead, Source, SourceStatus } from "./types";
+import { fetchLeads } from "./client";
+import { getFacebookLeads } from "./facebook";
+import { getInstagramLeads } from "./instagram";
+import type { ImportResult, IntegrationStatus, Lead, Source } from "./types";
 
-/**
- * Local store of imported leads (localStorage). If your backend already stores
- * and de-duplicates leads, swap getLeads() for a call to it and drop this store.
- */
-const KEY = "imported-leads";
-const META = "source-last-received";
-const usingMock = !FACEBOOK_API && !INSTAGRAM_API;
+const SEEN = "synced-lead-ids";
 
-function read(): Lead[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  // Demo seed: the first few mock leads are already imported
-  return usingMock ? [...mockLeads("facebook", 6), ...mockLeads("instagram", 5)] : [];
-}
+// React Strict Mode runs the import effect twice in dev. Share one in-flight result
+// so a single click is not counted as a duplicate of itself.
+let recentImport: { key: string; at: number; promise: Promise<ImportResult> } | null = null;
 
-function write(leads: Lead[]) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(leads));
-  } catch {}
-}
-
+/** Live leads stored by the Meta webhook server. */
 export async function getLeads(): Promise<Lead[]> {
-  if (usingMock) await delay(400);
-  return dedupe(read()).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  return fetchLeads("/api/leads", "facebook");
 }
 
 function dedupe(leads: Lead[]) {
@@ -36,32 +19,36 @@ function dedupe(leads: Lead[]) {
   return leads.filter((l) => (l.id && seen.has(l.id) ? false : (seen.add(l.id), true)));
 }
 
-export async function importLeads(sources: Source[] = ["facebook", "instagram"]): Promise<ImportResult> {
+export function importLeads(sources: Source[] = ["facebook", "instagram"]): Promise<ImportResult> {
+  const key = [...sources].sort().join(",");
+  if (recentImport && recentImport.key === key && Date.now() - recentImport.at < 1500) {
+    return recentImport.promise;
+  }
+  const promise = runImport(sources);
+  recentImport = { key, at: Date.now(), promise };
+  return promise;
+}
+
+async function runImport(sources: Source[]): Promise<ImportResult> {
   const fetched = (
-    await Promise.all(
-      sources.map((s) => (s === "facebook" ? getFacebookLeads() : getInstagramLeads())),
-    )
+    await Promise.all(sources.map((s) => (s === "facebook" ? getFacebookLeads() : getInstagramLeads())))
   ).flat();
-  const existing = read();
-  const known = new Set(existing.map((l) => l.id));
-  const fresh = dedupe(fetched).filter((l) => !known.has(l.id));
-  write([...fresh, ...existing]);
-  const now = new Date().toISOString();
+  const unique = dedupe(fetched);
+  let seen = new Set<string>();
   try {
-    const meta = JSON.parse(localStorage.getItem(META) ?? "{}");
-    sources.forEach((s) => (meta[s] = now));
-    localStorage.setItem(META, JSON.stringify(meta));
+    const raw = JSON.parse(localStorage.getItem(SEEN) ?? "[]");
+    if (Array.isArray(raw)) seen = new Set(raw.map(String));
   } catch {}
-  return { imported: fresh.length, duplicates: fetched.length - fresh.length };
+  const fresh = unique.filter((l) => l.id && !seen.has(l.id));
+  unique.forEach((l) => l.id && seen.add(l.id));
+  try {
+    localStorage.setItem(SEEN, JSON.stringify([...seen]));
+  } catch {}
+  return { imported: fresh.length, duplicates: unique.length - fresh.length };
 }
 
-export function getSourceStatus(source: Source): SourceStatus {
-  let last: string | null = null;
-  try {
-    last = JSON.parse(localStorage.getItem(META) ?? "{}")[source] ?? null;
-  } catch {}
-  const configured = Boolean(source === "facebook" ? FACEBOOK_API : INSTAGRAM_API);
-  return { configured, lastReceived: last ?? (usingMock ? new Date(Date.now() - 2 * 60000).toISOString() : null) };
+export async function getIntegrationStatus(): Promise<IntegrationStatus> {
+  const res = await fetch("/api/status");
+  if (!res.ok) throw new Error(`Request failed (${res.status})`);
+  return res.json();
 }
-
-export const isMockMode = usingMock;

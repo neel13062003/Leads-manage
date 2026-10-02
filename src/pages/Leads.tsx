@@ -135,7 +135,7 @@ export default function LeadsPage({ onImport }: { onImport: () => void }) {
           <State
             icon={<Inbox className="text-muted" />}
             title="No leads yet"
-            text="Connect your Facebook or Instagram lead source to start importing leads."
+            text="New Facebook and Instagram Lead Ads will show up here when Meta sends them to the webhook."
             action={<Button onClick={onImport}>Import Leads</Button>}
           />
         ) : filtered.length === 0 ? (

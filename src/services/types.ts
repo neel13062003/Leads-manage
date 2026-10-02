@@ -20,4 +20,13 @@ export interface ImportResult {
 export interface SourceStatus {
   configured: boolean;
   lastReceived: string | null;
+  count?: number;
+}
+
+export interface IntegrationStatus {
+  configured: boolean;
+  verifyToken: boolean;
+  graphToken: boolean;
+  callbackPath: string;
+  sources: Record<Source, SourceStatus>;
 }
